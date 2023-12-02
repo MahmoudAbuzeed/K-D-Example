@@ -3,6 +3,7 @@ package kdtree
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 )
 
@@ -30,21 +31,87 @@ func NewKDTree[T any](points []KDPoint[T], dstFn KDistanceCalculator[T]) *KDTree
 		panic("dstFn cannot be nil")
 	}
 
-	return &KDTree[T]{dstFn: dstFn, Root: buildTree(points, dstFn), Size: len(points)}
+	return &KDTree[T]{dstFn: dstFn, Root: buildTree(points, dstFn, 0), Size: len(points)}
 }
 
 // To Implement
 
-func buildTree[T any](points []KDPoint[T], dstFn KDistanceCalculator[T]) *Node[T] {
-	panic("not implemented")
+func buildTree[T any](points []KDPoint[T], dstFn KDistanceCalculator[T], depth int) *Node[T] {
+	if len(points) == 0 {
+		return nil
+	}
+
+	// Select axis based on depth
+	axis := depth % points[0].Dimensions()
+
+	// Sort points by the selected axis
+	sort.Slice(points, func(i, j int) bool {
+		return dstFn(points[i], points[j], axis) < 0
+	})
+
+	// Find median
+	median := len(points) / 2
+
+	// Create a new node
+	return &Node[T]{
+		Point: points[median],
+		Left:  buildTree(points[:median], dstFn, depth+1),
+		Right: buildTree(points[median+1:], dstFn, depth+1),
+	}
 }
 
 func (t *KDTree[T]) SearchNearest(target KDPoint[T]) KDPoint[T] {
-	panic("not implemented")
+	return searchNearest(t.Root, target, 0, t.dstFn, nil, math.MaxFloat64).Point
+}
+
+func searchNearest[T any](node *Node[T], target KDPoint[T], depth int, dstFn KDistanceCalculator[T], bestNode *Node[T], bestDist float64) *Node[T] {
+	if node == nil {
+		return bestNode
+	}
+
+	axis := depth % target.Dimensions()
+	dist := distance(target, node.Point, dstFn)
+	var nextNode, otherNode *Node[T]
+
+	if dstFn(target, node.Point, axis) < 0 {
+		nextNode, otherNode = node.Left, node.Right
+	} else {
+		nextNode, otherNode = node.Right, node.Left
+	}
+
+	bestNode = searchNearest(nextNode, target, depth+1, dstFn, bestNode, bestDist)
+	if dist < bestDist {
+		bestDist = dist
+		bestNode = node
+	}
+
+	// Check if other subtree might contain a closer point
+	if math.Pow(dstFn(target, node.Point, axis), 2) < bestDist {
+		bestNode = searchNearest(otherNode, target, depth+1, dstFn, bestNode, bestDist)
+	}
+
+	return bestNode
 }
 
 func (t *KDTree[T]) Insert(p KDPoint[T]) {
-	panic("not implemented")
+	t.Root = insert(t.Root, p, 0, t.dstFn)
+	t.Size++
+}
+
+func insert[T any](node *Node[T], point KDPoint[T], depth int, dstFn KDistanceCalculator[T]) *Node[T] {
+	if node == nil {
+		return &Node[T]{Point: point}
+	}
+
+	axis := depth % point.Dimensions()
+
+	if dstFn(point, node.Point, axis) < 0 {
+		node.Left = insert(node.Left, point, depth+1, dstFn)
+	} else {
+		node.Right = insert(node.Right, point, depth+1, dstFn)
+	}
+
+	return node
 }
 
 // Utils
